@@ -19,7 +19,6 @@ impl SessionToken {
     }
 }
 
-
 impl Borrow<String> for SessionToken {
     fn borrow(&self) -> &String {
         &self.0
