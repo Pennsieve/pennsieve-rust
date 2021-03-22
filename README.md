@@ -1,17 +1,17 @@
-# blackfynn-rust
-The official Blackfynn Rust library.
+# pennsieve-rust
+The official Pennsieve Rust library.
 
 <table>
     <tr>
         <td><strong>Build Status</strong></td>
-        <td><img src="https://github.com/Pennsieve/blackfynn-rust/workflows/Testing/badge.svg"></img></td>
+        <td><img src="https://github.com/Pennsieve/pennsieve-rust/workflows/Testing/badge.svg"></img></td>
     </tr>
 </table>
 
 ## Usage
 ```
 [dependencies]
-blackfynn = { git = "https://github.com/Pennsieve/blackfynn-rust.git", tag = "v0.12.5" }
+pennsieve = { git = "https://github.com/Pennsieve/pennsieve-rust.git", tag = "v0.12.5" }
 ```
 
 ## License

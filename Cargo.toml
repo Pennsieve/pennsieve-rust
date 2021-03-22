@@ -1,7 +1,7 @@
 [package]
-name = "blackfynn"
+name = "pennsieve"
 version = "0.13.0"
-authors = ["Blackfynn <https://github.com/Blackfynn/blackfynn-rust>"]
+authors = ["Pennsieve <https://github.com/Pennsieve/pennsieve-rust>"]
 publish = false
 edition = "2018"
 

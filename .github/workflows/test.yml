@@ -35,7 +35,7 @@ jobs:
     - name: Test
       id: test
       env:
-        BLACKFYNN_API_KEY: ${{ secrets.BLACKFYNN_API_KEY }}
-        BLACKFYNN_SECRET_KEY: ${{ secrets.BLACKFYNN_SECRET_KEY }}
+        PENNSIEVE_API_KEY: ${{ secrets.PENNSIEVE_API_KEY }}
+        PENNSIEVE_SECRET_KEY: ${{ secrets.PENNSIEVE_SECRET_KEY }}
       run: |
         cargo test -- --test-threads=1
