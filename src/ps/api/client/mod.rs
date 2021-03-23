@@ -1903,17 +1903,13 @@ pub mod tests {
             upload_to_upload_service(ps, enumerated_files.clone())
         });
 
-        let (_, dataset_id, a) = match result {
+        let (_, dataset_id, _) = match result {
             Ok(results) => results,
             Err(err) => {
                 println!("{}", err.to_string());
                 panic!();
             }
         };
-        println!("{}",dataset_id);
-        println!("{}",file_name);
-        println!("{:?}",file_paths);
-        println!("{:?}",a);
         let package = run(&ps(), |ps| {
             let ps_clone = ps.clone();
             let dataset_id_clone = dataset_id.clone();
