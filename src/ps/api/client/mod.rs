@@ -227,8 +227,24 @@ impl Pennsieve {
         String::from_utf8_lossy(&as_bytes).to_string()
     }
 
-    fn get_url(&self) -> url::Url {
-        self.inner.lock().unwrap().config.env().url().clone()
+    fn get_pennsieve_url(&self) -> url::Url {
+        self.inner
+            .lock()
+            .unwrap()
+            .config
+            .env()
+            .pennsieve_url()
+            .clone()
+    }
+
+    fn get_cognito_url(&self) -> url::Url {
+        self.inner
+            .lock()
+            .unwrap()
+            .config
+            .env()
+            .cognito_url()
+            .clone()
     }
 
     /// Make a request to the given route using the given json payload
@@ -450,7 +466,7 @@ impl Pennsieve {
         let token = self.session_token().clone();
         let client = self.inner.lock().unwrap().http_client.clone();
 
-        let mut url = self.get_url();
+        let mut url = self.get_pennsieve_url();
         url.set_path(&route);
 
         // If query parameters are provided, add them to the constructed URL:
@@ -550,15 +566,22 @@ impl Pennsieve {
     ) -> Future<response::ApiSession> {
         let payload = request::ApiLogin::new(api_key.into(), api_secret.into());
         let this = self.clone();
-        into_future_trait(
-            post!(self, "/account/api/session", params!(), &payload).and_then(
-                move |login_response: response::ApiSession| {
-                    this.inner.lock().unwrap().session_token =
-                        Some(login_response.session_token().clone());
-                    Ok(login_response)
-                },
-            ),
-        )
+        let mut cognito_url = this.get_cognito_url().clone();
+        cognito_url.set_path("/login");
+
+        let pennsieve_impl = this.inner.clone();
+        let locked_inner = *pennsieve_impl.lock().unwrap();
+        // locked_inner.http_client.get(cognito_url.)
+
+        // into_future_trait(
+        //     post!(self, "/account/api/session", params!(), &payload).and_then(
+        //         move |login_response: response::ApiSession| {
+        //             this.inner.lock().unwrap().session_token =
+        //                 Some(login_response.session_token().clone());
+        //             Ok(login_response)
+        //         },
+        //     ),
+        // )
     }
 
     /// Get the current user.
