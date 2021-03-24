@@ -1219,7 +1219,7 @@ pub mod tests {
     const TEST_SECRET_KEY: &str = env!("PENNSIEVE_SECRET_KEY");
 
     // "Agent Testing"
-    const FIXTURE_ORGANIZATION: &str = "N:organization:01ba6b51-7bdb-4e02-889e-260ea3fd9d68";
+    const FIXTURE_ORGANIZATION: &str = "N:organization:713eeb6e-c42c-445d-8a60-818c741ea87a";
 
     // Dedicated agent email
     #[allow(dead_code)]
@@ -1229,11 +1229,11 @@ pub mod tests {
     // #[allow(dead_code)]
     // const FIXTURE_USER: &str = "N:user:6caa1955-c39e-4198-83c6-aa8fe3afbe93";
 
-    const FIXTURE_DATASET: &str = "N:dataset:87c06de9-2f5c-47c9-9537-c9586abbdd1a";
-    const FIXTURE_DATASET_NAME: &str = "$AGENT-FIXTURE";
+    const FIXTURE_DATASET: &str = "N:dataset:e5902b32-7954-463b-bb4c-2c9cf5b3bcfb";
+    const FIXTURE_DATASET_NAME: &str = "AGENT-FIXTURE";
 
-    const FIXTURE_PACKAGE: &str = "N:collection:391faf26-2e0b-419f-a465-6a247aabcbd7";
-    const FIXTURE_PACKAGE_NAME: &str = "$AGENT-TEST-PACKAGE";
+    const FIXTURE_PACKAGE: &str = "N:collection:c602852e-3cc0-4b24-a68a-dd84045dfa47";
+    const FIXTURE_PACKAGE_NAME: &str = "AGENT-TEST-PACKAGE";
 
     lazy_static! {
         static ref CONFIG: Config = Config::new(TEST_ENVIRONMENT);
@@ -1654,7 +1654,7 @@ pub mod tests {
             .collect();
         collaborators.sort();
 
-        let expected = ("Michael".to_string(), "owner".to_string());
+        let expected = ("Jeremy".to_string(), "owner".to_string());
 
         assert!(collaborators.contains(&expected));
     }
@@ -1693,7 +1693,7 @@ pub mod tests {
             organization_role.name().clone(),
             organization_role.role().cloned(),
         );
-        let expected = ("Agent Testing".to_string(), None);
+        let expected = ("Test-Org".to_string(), None);
 
         assert_eq!(organization_role, expected);
     }
@@ -1895,8 +1895,8 @@ pub mod tests {
 
     #[test]
     fn process_package_succeeds() {
-        let file_name = "test-tiny";
-        let file_paths = vec![format!("{}/{}.png", TEST_DATA_DIR.to_string(), file_name)];
+        let file_name = "test-tiny.png";
+        let file_paths = vec![format!("{}/{}", TEST_DATA_DIR.to_string(), file_name)];
         let enumerated_files = add_upload_ids(&file_paths);
         // create upload
         let result = run(&ps(), |ps| {

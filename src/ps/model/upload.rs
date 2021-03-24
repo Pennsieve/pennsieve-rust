@@ -208,7 +208,7 @@ impl FileUpload {
     /// # Example
     ///
     /// ```
-    /// use pennsieve::model::{FileUpload, UploadId};
+    /// use pennsieve_rust::model::{FileUpload, UploadId};
     ///
     /// let non_recursive_upload = FileUpload::new_non_recursive_upload(
     ///   UploadId::from(1), "/Users/matt/my_file.txt"
@@ -256,7 +256,7 @@ impl FileUpload {
     /// # Example
     ///
     /// ```
-    /// use pennsieve::model::{FileUpload, UploadId};
+    /// use pennsieve_rust::model::{FileUpload, UploadId};
     ///
     /// let recursive_upload = FileUpload::new_recursive_upload(
     ///   UploadId::from(1),                                        // id
