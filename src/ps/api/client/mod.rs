@@ -4,10 +4,10 @@ pub mod progress;
 
 pub use self::progress::{ProgressCallback, ProgressUpdate};
 
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::{borrow::Borrow, pin::Pin};
 use std::{iter, time};
 
 use futures::{Future as _Future, Stream as _Stream, *};
@@ -17,6 +17,8 @@ use hyper::{self, Method, StatusCode};
 use hyper_tls::HttpsConnector;
 use lazy_static::lazy_static;
 use log::{debug, error};
+use model::User;
+use rusoto_cognito_idp::{CognitoIdentityProvider, InitiateAuthRequest};
 use serde;
 use serde_json;
 use tokio;
@@ -563,15 +565,45 @@ impl Pennsieve {
         &self,
         api_key: S,
         api_secret: S,
+        app_client_id: S,
     ) -> Future<response::ApiSession> {
-        let payload = request::ApiLogin::new(api_key.into(), api_secret.into());
-        let this = self.clone();
-        let mut cognito_url = this.get_cognito_url().clone();
-        cognito_url.set_path("/login");
+        let cognito = rusoto_cognito_idp::CognitoIdentityProviderClient::new(
+            rusoto_core::region::Region::UsEast1,
+        );
 
-        let pennsieve_impl = this.inner.clone();
-        let locked_inner = *pennsieve_impl.lock().unwrap();
-        // locked_inner.http_client.get(cognito_url.)
+        let mut auth_parameters = HashMap::<String, String>::new();
+        auth_parameters.insert("USERNAME".to_string(), api_key.into());
+        auth_parameters.insert("SECRET_HASH".to_string(), api_secret.into());
+
+        let request = InitiateAuthRequest {
+            analytics_metadata: None,
+            auth_flow: "USER_PASSWORD_AUTH".to_string(),
+            auth_parameters: Some(auth_parameters),
+            client_id: app_client_id.into(),
+            client_metadata: None,
+            user_context_data: None,
+        };
+
+        let runtime = tokio::runtime::current_thread::Runtime::new().unwrap();
+
+        let result = runtime.block_on(async {
+            let response = cognito.initiate_auth(request).await;
+        });
+
+        // let response = ;
+
+        // dbg!(result);
+
+        todo!()
+
+        // let payload = request::ApiLogin::new(api_key.into(), api_secret.into());
+        // let this = self.clone();
+        // let mut cognito_url = this.get_cognito_url().clone();
+        // cognito_url.set_path("/login");
+
+        // let pennsieve_impl = this.inner.clone();
+        // let locked_inner = *pennsieve_impl.lock().unwrap();
+        // locked_inner.http_client.get(cognito_url);
 
         // into_future_trait(
         //     post!(self, "/account/api/session", params!(), &payload).and_then(
