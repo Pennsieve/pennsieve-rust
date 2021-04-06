@@ -18,7 +18,10 @@ use hyper_tls::HttpsConnector;
 use lazy_static::lazy_static;
 use log::{debug, error};
 use model::User;
-use rusoto_cognito_idp::{CognitoIdentityProvider, InitiateAuthRequest};
+use rusoto_cognito_idp::{
+    CognitoIdentityProvider, InitiateAuthError, InitiateAuthRequest, InitiateAuthResponse,
+};
+use rusoto_core::RusotoError;
 use serde;
 use serde_json;
 use tokio;
@@ -566,7 +569,7 @@ impl Pennsieve {
         api_key: S,
         api_secret: S,
         app_client_id: S,
-    ) -> Future<response::ApiSession> {
+    ) -> Future<std::result::Result<InitiateAuthResponse, RusotoError<InitiateAuthError>>> {
         let cognito = rusoto_cognito_idp::CognitoIdentityProviderClient::new(
             rusoto_core::region::Region::UsEast1,
         );
@@ -584,36 +587,10 @@ impl Pennsieve {
             user_context_data: None,
         };
 
-        let runtime = tokio::runtime::current_thread::Runtime::new().unwrap();
+        let mut runtime = tokio::runtime::current_thread::Runtime::new().unwrap();
+        let result = runtime.block_on(cognito.initiate_auth(request));
 
-        let result = runtime.block_on(async {
-            let response = cognito.initiate_auth(request).await;
-        });
-
-        // let response = ;
-
-        // dbg!(result);
-
-        todo!()
-
-        // let payload = request::ApiLogin::new(api_key.into(), api_secret.into());
-        // let this = self.clone();
-        // let mut cognito_url = this.get_cognito_url().clone();
-        // cognito_url.set_path("/login");
-
-        // let pennsieve_impl = this.inner.clone();
-        // let locked_inner = *pennsieve_impl.lock().unwrap();
-        // locked_inner.http_client.get(cognito_url);
-
-        // into_future_trait(
-        //     post!(self, "/account/api/session", params!(), &payload).and_then(
-        //         move |login_response: response::ApiSession| {
-        //             this.inner.lock().unwrap().session_token =
-        //                 Some(login_response.session_token().clone());
-        //             Ok(login_response)
-        //         },
-        //     ),
-        // )
+        into_future_trait(futures::finished(result))
     }
 
     /// Get the current user.
@@ -1272,6 +1249,7 @@ pub mod tests {
     const TEST_ENVIRONMENT: Environment = Environment::NonProduction;
     const TEST_API_KEY: &str = env!("PENNSIEVE_API_KEY");
     const TEST_SECRET_KEY: &str = env!("PENNSIEVE_SECRET_KEY");
+    const TEST_API_ID: &str = env!("PENNSIEVE_API_ID");
 
     // "Agent Testing"
     const FIXTURE_ORGANIZATION: &str = "N:organization:713eeb6e-c42c-445d-8a60-818c741ea87a";
@@ -1382,7 +1360,9 @@ pub mod tests {
     #[test]
     fn login_successfully_locally() {
         let ps = ps();
-        let result = run(&ps, move |ps| ps.login(TEST_API_KEY, TEST_SECRET_KEY));
+        let result = run(&ps, move |ps| {
+            ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
+        });
         assert!(result.is_ok());
         assert!(ps.session_token().is_some());
     }
@@ -1391,7 +1371,7 @@ pub mod tests {
     fn login_fails_locally() {
         let ps = ps();
         let result = run(&ps, move |ps| {
-            ps.login(TEST_API_KEY, "this-is-a-bad-secret")
+            ps.login(TEST_API_KEY, "this-is-a-bad-secret", TEST_API_ID)
         });
         assert!(result.is_err());
         assert!(ps.session_token().is_none());
@@ -1401,7 +1381,7 @@ pub mod tests {
     fn fetching_organizations_after_login_is_successful() {
         let org = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_organizations()),
             )
         });
@@ -1415,7 +1395,7 @@ pub mod tests {
     fn fetching_user_after_login_is_successful() {
         let user = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_user()),
             )
         });
@@ -1429,7 +1409,7 @@ pub mod tests {
     fn updating_org_after_login_is_successful() {
         let user = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_user().map(|user| (user, ps)))
                     .and_then(move |(user, ps)| {
                         let org = user.preferred_organization().clone();
@@ -1448,7 +1428,7 @@ pub mod tests {
     fn fetching_organizations_fails_if_login_fails() {
         let org = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, "another-bad-secret")
+                ps.login(TEST_API_KEY, "another-bad-secret", TEST_API_ID)
                     .and_then(move |_| ps.get_organizations()),
             )
         });
@@ -1459,9 +1439,12 @@ pub mod tests {
     #[test]
     fn fetching_organization_by_id_is_successful() {
         let org = run(&ps(), move |ps| {
-            into_future_trait(ps.login(TEST_API_KEY, TEST_SECRET_KEY).and_then(move |_| {
-                ps.get_organization_by_id(OrganizationId::new(FIXTURE_ORGANIZATION))
-            }))
+            into_future_trait(
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
+                    .and_then(move |_| {
+                        ps.get_organization_by_id(OrganizationId::new(FIXTURE_ORGANIZATION))
+                    }),
+            )
         });
 
         if org.is_err() {
@@ -1473,7 +1456,7 @@ pub mod tests {
     fn fetching_datasets_after_login_is_successful() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_datasets()),
             )
         });
@@ -1493,7 +1476,7 @@ pub mod tests {
     fn fetching_dataset_by_id_successful_if_logged_in_and_exists() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_id(DatasetNodeId::new(FIXTURE_DATASET))),
             )
         });
@@ -1507,7 +1490,7 @@ pub mod tests {
     fn fetching_dataset_by_name_successful_if_logged_in_and_exists() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_name(FIXTURE_DATASET_NAME)),
             )
         });
@@ -1521,7 +1504,7 @@ pub mod tests {
     fn fetching_dataset_generic_works_with_name() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset(FIXTURE_DATASET_NAME)),
             )
         });
@@ -1535,7 +1518,7 @@ pub mod tests {
     fn fetching_dataset_generic_works_with_id() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset(DatasetNodeId::new(FIXTURE_DATASET))),
             )
         });
@@ -1549,7 +1532,7 @@ pub mod tests {
     fn fetching_child_dataset_by_id_is_successful_can_contains_child_packages_if_found_by_id() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_id(FIXTURE_DATASET.into())),
             )
         });
@@ -1568,7 +1551,7 @@ pub mod tests {
     fn fetching_child_dataset_by_name_is_successful_can_contains_child_packages_if_found_by_id() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_id(FIXTURE_DATASET.into())),
             )
         });
@@ -1587,7 +1570,7 @@ pub mod tests {
     fn fetching_child_dataset_by_id_is_successful_can_contains_child_packages_if_found_by_name() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_name(FIXTURE_DATASET_NAME)),
             )
         });
@@ -1606,7 +1589,7 @@ pub mod tests {
     fn fetching_child_dataset_by_name_is_successful_can_contains_child_packages_if_found_by_name() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_name(FIXTURE_DATASET_NAME)),
             )
         });
@@ -1625,7 +1608,7 @@ pub mod tests {
     fn fetching_child_dataset_fails_if_it_does_not_exists() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_name(FIXTURE_DATASET_NAME)),
             )
         });
@@ -1641,7 +1624,7 @@ pub mod tests {
     fn fetching_dataset_by_name_fails_if_it_does_not_exist() {
         let ds = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_dataset_by_name("doesnotexist")),
             )
         });
@@ -1653,7 +1636,7 @@ pub mod tests {
     fn fetching_package_by_id_successful_if_logged_in_and_exists() {
         let package = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_package_by_id(PackageId::new(FIXTURE_PACKAGE))),
             )
         });
@@ -1666,7 +1649,7 @@ pub mod tests {
     fn fetching_package_by_id_invalid_if_logged_in_and_exists() {
         let package = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_package_by_id(PackageId::new("invalid_package_id"))),
             )
         });
@@ -1683,11 +1666,14 @@ pub mod tests {
     #[test]
     fn fetching_dataset_by_id_fails_if_logged_in_but_doesnt_exists() {
         let ds = run(&ps(), move |ps| {
-            into_future_trait(ps.login(TEST_API_KEY, TEST_SECRET_KEY).and_then(move |_| {
-                ps.get_dataset_by_id(DatasetNodeId::new(
-                    "N:dataset:not-real-6803-4a67-ps20-83076774a5c7",
-                ))
-            }))
+            into_future_trait(
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
+                    .and_then(move |_| {
+                        ps.get_dataset_by_id(DatasetNodeId::new(
+                            "N:dataset:not-real-6803-4a67-ps20-83076774a5c7",
+                        ))
+                    }),
+            )
         });
         assert!(ds.is_err());
     }
@@ -1695,9 +1681,12 @@ pub mod tests {
     #[test]
     fn fetch_dataset_user_collaborators() {
         let collaborators = run(&ps(), move |ps| {
-            into_future_trait(ps.login(TEST_API_KEY, TEST_SECRET_KEY).and_then(move |_| {
-                ps.get_dataset_user_collaborators(DatasetNodeId::new(FIXTURE_DATASET))
-            }))
+            into_future_trait(
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
+                    .and_then(move |_| {
+                        ps.get_dataset_user_collaborators(DatasetNodeId::new(FIXTURE_DATASET))
+                    }),
+            )
         })
         .unwrap();
 
@@ -1717,9 +1706,12 @@ pub mod tests {
     #[test]
     fn fetch_dataset_team_collaborators() {
         let collaborators = run(&ps(), move |ps| {
-            into_future_trait(ps.login(TEST_API_KEY, TEST_SECRET_KEY).and_then(move |_| {
-                ps.get_dataset_team_collaborators(DatasetNodeId::new(FIXTURE_DATASET))
-            }))
+            into_future_trait(
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
+                    .and_then(move |_| {
+                        ps.get_dataset_team_collaborators(DatasetNodeId::new(FIXTURE_DATASET))
+                    }),
+            )
         })
         .unwrap();
         assert!(collaborators.iter().all(|c| c.role().is_some()));
@@ -1738,9 +1730,12 @@ pub mod tests {
     #[test]
     fn fetch_dataset_organization_role() {
         let organization_role = run(&ps(), move |ps| {
-            into_future_trait(ps.login(TEST_API_KEY, TEST_SECRET_KEY).and_then(move |_| {
-                ps.get_dataset_organization_role(DatasetNodeId::new(FIXTURE_DATASET))
-            }))
+            into_future_trait(
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
+                    .and_then(move |_| {
+                        ps.get_dataset_organization_role(DatasetNodeId::new(FIXTURE_DATASET))
+                    }),
+            )
         })
         .unwrap();
 
@@ -1757,7 +1752,7 @@ pub mod tests {
     fn fetch_members() {
         let members = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_user().map(|user| (user, ps)))
                     .and_then(move |(user, ps)| {
                         let org = user.preferred_organization().clone();
@@ -1773,7 +1768,7 @@ pub mod tests {
     fn fetch_teams() {
         let teams = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.get_user().map(|user| (user, ps)))
                     .and_then(move |(user, ps)| {
                         let org = user.preferred_organization().clone();
@@ -1791,7 +1786,7 @@ pub mod tests {
         let result = run(&ps(), move |ps| {
             let new_dataset_name = new_dataset_name.clone();
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| {
                         let new_dataset_name = new_dataset_name.clone();
                         ps.create_dataset(
@@ -1833,7 +1828,7 @@ pub mod tests {
     fn creating_then_updating_then_delete_package_successful() {
         let result = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| {
                         ps.create_dataset(
                             rand_suffix("__agent-test-dataset".to_string()),
@@ -1875,7 +1870,7 @@ pub mod tests {
     fn process_package_failed() {
         let resp = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| ps.process_package(PackageId::new(FIXTURE_PACKAGE))),
             )
         });
@@ -1892,7 +1887,7 @@ pub mod tests {
     fn move_package_to_toplevel() {
         let result = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| {
                         ps.create_dataset(
                             rand_suffix("__agent-test-dataset".to_string()),
@@ -1969,7 +1964,7 @@ pub mod tests {
             let ps_clone = ps.clone();
             let dataset_id_clone = dataset_id.clone();
             let f = ps
-                .login(TEST_API_KEY, TEST_SECRET_KEY)
+                .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                 .and_then(move |_| ps_clone.clone().get_dataset_by_id(dataset_id_clone))
                 .map(move |ds| {
                     let file_name_clone = file_name.clone();
@@ -1989,7 +1984,7 @@ pub mod tests {
                     let ps_clone = ps.clone();
                     let package = package.clone();
                     let f = ps
-                        .login(TEST_API_KEY, TEST_SECRET_KEY)
+                        .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                         .and_then(move |_| ps_clone.get_package_by_id(package.id().clone()));
                     into_future_trait(f)
                 })
@@ -1998,9 +1993,11 @@ pub mod tests {
                     let result = run(&ps(), |ps| {
                         let ps_clone = ps.clone();
                         let current_package_clone = current_package.clone();
-                        let f = ps.login(TEST_API_KEY, TEST_SECRET_KEY).and_then(move |_| {
-                            ps_clone.process_package(current_package_clone.id().clone())
-                        });
+                        let f = ps
+                            .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
+                            .and_then(move |_| {
+                                ps_clone.process_package(current_package_clone.id().clone())
+                            });
                         into_future_trait(f)
                     });
                     if let Err(err) = result {
@@ -2019,7 +2016,7 @@ pub mod tests {
             let ps_clone = ps.clone();
             let dataset_id_clone = dataset_id.clone();
             let f = ps
-                .login(TEST_API_KEY, TEST_SECRET_KEY)
+                .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                 .and_then(move |_| ps_clone.delete_dataset(dataset_id_clone));
             into_future_trait(f)
         })
@@ -2030,7 +2027,7 @@ pub mod tests {
     fn move_package_to_collection() {
         let result = run(&ps(), move |ps| {
             into_future_trait(
-                ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+                ps.login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                     .and_then(move |_| {
                         ps.create_dataset(
                             rand_suffix("__agent-test-dataset".to_string()),
@@ -2102,7 +2099,7 @@ pub mod tests {
         let files = files.clone();
         let files_clone = files.clone();
         let f = ps
-            .login(TEST_API_KEY, TEST_SECRET_KEY)
+            .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
             .and_then(move |_| {
                 ps.create_dataset(
                     rand_suffix("__agent-test-dataset".to_string()),
@@ -2180,7 +2177,7 @@ pub mod tests {
         // create upload
         let result = run(&ps(), move |ps| {
             let f = ps
-                .login(TEST_API_KEY, TEST_SECRET_KEY)
+                .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                 .and_then(move |_| {
                     ps.create_dataset(
                         rand_suffix("__agent-test-dataset".to_string()),
@@ -2276,7 +2273,7 @@ pub mod tests {
         // create upload
         let result = run(&ps(), move |ps| {
             let f = ps
-                .login(TEST_API_KEY, TEST_SECRET_KEY)
+                .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                 .and_then(move |_| {
                     ps.create_dataset(
                         rand_suffix("__agent-test-dataset".to_string()),
@@ -2452,7 +2449,7 @@ pub mod tests {
         // preview upload and verify that it contains previewPath
         let result = run(&ps(), move |ps| {
             let upload_f = ps
-                .login(TEST_API_KEY, TEST_SECRET_KEY)
+                .login(TEST_API_KEY, TEST_SECRET_KEY, TEST_API_ID)
                 .and_then(move |_| {
                     ps.create_dataset(
                         rand_suffix("__agent-test-dataset".to_string()),
