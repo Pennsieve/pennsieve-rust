@@ -4,10 +4,10 @@ pub mod progress;
 
 pub use self::progress::{ProgressCallback, ProgressUpdate};
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::{borrow::Borrow, pin::Pin};
 use std::{iter, time};
 
 use futures::{Future as _Future, Stream as _Stream, *};
@@ -232,23 +232,13 @@ impl Pennsieve {
         String::from_utf8_lossy(&as_bytes).to_string()
     }
 
-    fn get_pennsieve_url(&self) -> url::Url {
+    fn get_url(&self) -> url::Url {
         self.inner
             .lock()
             .unwrap()
             .config
             .env()
             .pennsieve_url()
-            .clone()
-    }
-
-    fn get_cognito_url(&self) -> url::Url {
-        self.inner
-            .lock()
-            .unwrap()
-            .config
-            .env()
-            .cognito_url()
             .clone()
     }
 
@@ -471,7 +461,7 @@ impl Pennsieve {
         let token = self.session_token().clone();
         let client = self.inner.lock().unwrap().http_client.clone();
 
-        let mut url = self.get_pennsieve_url();
+        let mut url = self.get_url();
         url.set_path(&route);
 
         // If query parameters are provided, add them to the constructed URL:
