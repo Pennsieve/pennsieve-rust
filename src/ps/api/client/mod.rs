@@ -17,11 +17,7 @@ use hyper::{self, Method, StatusCode};
 use hyper_tls::HttpsConnector;
 use lazy_static::lazy_static;
 use log::{debug, error};
-use model::User;
-use rusoto_cognito_idp::{
-    CognitoIdentityProvider, InitiateAuthError, InitiateAuthRequest, InitiateAuthResponse,
-};
-use rusoto_core::RusotoError;
+use rusoto_cognito_idp::{CognitoIdentityProvider, InitiateAuthRequest, InitiateAuthResponse};
 use serde;
 use serde_json;
 use tokio;
@@ -559,14 +555,14 @@ impl Pennsieve {
         api_key: S,
         api_secret: S,
         app_client_id: S,
-    ) -> Future<std::result::Result<InitiateAuthResponse, RusotoError<InitiateAuthError>>> {
+    ) -> Future<InitiateAuthResponse> {
         let cognito = rusoto_cognito_idp::CognitoIdentityProviderClient::new(
             rusoto_core::region::Region::UsEast1,
         );
 
         let mut auth_parameters = HashMap::<String, String>::new();
         auth_parameters.insert("USERNAME".to_string(), api_key.into());
-        auth_parameters.insert("SECRET_HASH".to_string(), api_secret.into());
+        auth_parameters.insert("PASSWORD".to_string(), api_secret.into());
 
         let request = InitiateAuthRequest {
             analytics_metadata: None,
@@ -578,9 +574,17 @@ impl Pennsieve {
         };
 
         let mut runtime = tokio::runtime::current_thread::Runtime::new().unwrap();
-        let result = runtime.block_on(cognito.initiate_auth(request));
+        let response = runtime.block_on(cognito.initiate_auth(request)).unwrap();
+        self.inner.lock().unwrap().session_token = Some(SessionToken::new(
+            response
+                .clone()
+                .authentication_result
+                .unwrap()
+                .access_token
+                .unwrap(),
+        ));
 
-        into_future_trait(futures::finished(result))
+        into_future_trait(futures::finished(response))
     }
 
     /// Get the current user.
@@ -2253,6 +2257,7 @@ pub mod tests {
 
         // check result
         if result.is_err() {
+            dbg!(&result);
             println!("{}", result.unwrap_err().to_string());
             panic!();
         }
