@@ -584,29 +584,32 @@ impl Pennsieve {
             user_context_data: None,
         };
 
-        // let fut = cognito.initiate_auth(request).and_then(|result| {
-        //     self.inner.lock().unwrap().session_token = Some(SessionToken::new(
-        //         result
-        //             .clone()
-        //             .authentication_result
-        //             .unwrap()
-        //             .access_token
-        //             .unwrap(),
-        //     ));
-
-        //     futures::finished(result)
-        // });
-
         match runtime.block_on(cognito.initiate_auth(request)) {
             Ok(response) => {
-                self.inner.lock().unwrap().session_token = Some(SessionToken::new(
-                    response
-                        .clone()
-                        .authentication_result
-                        .unwrap()
-                        .access_token
-                        .unwrap(),
-                ));
+                let id_token = response
+                    .clone()
+                    .authentication_result
+                    .unwrap()
+                    .id_token
+                    .unwrap();
+
+                let id_token_string = id_token.to_string();
+                let payload_parts: Vec<&str> = id_token_string.split(".").collect();
+                let payload_b64 = base64_url::decode(payload_parts[1]).unwrap();
+                let payload_str = std::str::from_utf8(&payload_b64).unwrap();
+                let payload: serde_json::Value = serde_json::from_str(payload_str).unwrap();
+                let organization_node_id = payload["custom:organization_node_id"].as_str().unwrap();
+
+                self.set_current_organization(Some(&OrganizationId::new(organization_node_id)));
+
+                let access_token = response
+                    .clone()
+                    .authentication_result
+                    .unwrap()
+                    .access_token
+                    .unwrap();
+
+                self.inner.lock().unwrap().session_token = Some(SessionToken::new(access_token));
 
                 into_future_trait(futures::finished(response))
             }

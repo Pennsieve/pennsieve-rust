@@ -6,6 +6,7 @@ publish = false
 edition = "2018"
 
 [dependencies]
+base64-url = "1.4.9"
 chrono = { version = "^0.4", features = ["serde"] }
 sha2 = "^0.8"
 failure = "^0.1"
@@ -14,6 +15,7 @@ futures = "^0.1"
 hyper = "^0.12"
 hyper-tls = "^0.3"
 itertools = "^0.8"
+jsonwebtoken = "7"
 lazy_static = "^1.4"
 log = "^0.4"
 rand = "^0.7"
