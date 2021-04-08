@@ -23,7 +23,7 @@ pub enum Environment {
 }
 
 impl Environment {
-    pub fn pennsieve_url(self) -> Url {
+    pub fn url(self) -> Url {
         use self::Environment::*;
         match self {
             Local => {
@@ -35,17 +35,6 @@ impl Environment {
             }
             NonProduction => "https://api.pennsieve.net".parse::<Url>().unwrap(),
             Production => "https://api.pennsieve.io".parse::<Url>().unwrap(),
-        }
-    }
-
-    pub fn cognito_url(self) -> Url {
-        use self::Environment::*;
-        match self {
-            Local => unimplemented!("Can't run Cognito locally."),
-            NonProduction => "https://dev-pennsieve-tokens-use1.auth.us-east-1.amazoncognito.com"
-                .parse::<Url>()
-                .unwrap(),
-            Production => unimplemented!("No production Cognito exists yet."),
         }
     }
 }
@@ -101,7 +90,7 @@ impl Config {
 
     #[allow(dead_code)]
     pub fn api_url(&self) -> Url {
-        self.env.pennsieve_url()
+        self.env.url()
     }
 
     #[allow(dead_code)]

@@ -229,13 +229,7 @@ impl Pennsieve {
     }
 
     fn get_url(&self) -> url::Url {
-        self.inner
-            .lock()
-            .unwrap()
-            .config
-            .env()
-            .pennsieve_url()
-            .clone()
+        self.inner.lock().unwrap().config.env().url().clone()
     }
 
     /// Make a request to the given route using the given json payload
