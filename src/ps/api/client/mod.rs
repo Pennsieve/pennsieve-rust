@@ -17,7 +17,7 @@ use hyper::{self, Method, StatusCode};
 use hyper_tls::HttpsConnector;
 use lazy_static::lazy_static;
 use log::{debug, error, warn};
-use rusoto_cognito_idp::{CognitoIdentityProvider, InitiateAuthRequest, InitiateAuthResponse};
+use rusoto_cognito_idp::{CognitoIdentityProvider, InitiateAuthRequest};
 use serde;
 use serde_json;
 use tokio;
@@ -548,7 +548,7 @@ impl Pennsieve {
         &self,
         api_key: S,
         api_secret: S,
-    ) -> Future<InitiateAuthResponse> {
+    ) -> Future<response::ApiSession> {
         // TODO(jesse) GET RID OF THIS INNER EXECUTOR AND RETURN THE FUTURE LIKE A NORMAL PERSON WOULD
         warn!("Spawning new `current_thread` executor, this function should not create its own executor.");
 
@@ -603,9 +603,14 @@ impl Pennsieve {
                     .access_token
                     .unwrap();
 
-                self.inner.lock().unwrap().session_token = Some(SessionToken::new(access_token));
+                let session_token = SessionToken::new(access_token);
+                self.inner.lock().unwrap().session_token = Some(session_token.clone());
 
-                into_future_trait(futures::finished(response))
+                into_future_trait(futures::finished(response::ApiSession::new(
+                    session_token,
+                    organization_node_id.to_string(),
+                    payload["exp"].as_i64().unwrap() as i32,
+                )))
             }
 
             Err(err) => into_future_trait(futures::failed(err.into())),
