@@ -18,6 +18,8 @@ use hyper_tls::HttpsConnector;
 use lazy_static::lazy_static;
 use log::{debug, error, warn};
 use rusoto_cognito_idp::{CognitoIdentityProvider, InitiateAuthRequest};
+use rusoto_core::credential::{AwsCredentials, StaticProvider};
+use rusoto_core::request::HttpClient;
 use serde;
 use serde_json;
 use tokio;
@@ -558,7 +560,9 @@ impl Pennsieve {
             .block_on(get!(self, "/authentication/cognito-config"))
             .unwrap();
 
-        let cognito = rusoto_cognito_idp::CognitoIdentityProviderClient::new(
+        let cognito = rusoto_cognito_idp::CognitoIdentityProviderClient::new_with(
+            HttpClient::new().expect("failed to create request dispatcher"),
+            StaticProvider::from(AwsCredentials::default()),
             rusoto_core::region::Region::UsEast1,
         );
 
@@ -1749,7 +1753,7 @@ pub mod tests {
             organization_role.name().clone(),
             organization_role.role().cloned(),
         );
-        let expected = ("Test-Org".to_string(), Some("manager".to_string()));
+        let expected = ("Test-Org".to_string(), None);
 
         assert_eq!(organization_role, expected);
     }
