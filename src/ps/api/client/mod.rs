@@ -16,7 +16,10 @@ use hyper::header::{HeaderName, HeaderValue};
 use hyper::{self, Method, StatusCode};
 use hyper_tls::HttpsConnector;
 use lazy_static::lazy_static;
-use log::{debug, error};
+use log::{debug, error, warn};
+use rusoto_cognito_idp::{CognitoIdentityProvider, InitiateAuthRequest};
+use rusoto_core::credential::{AwsCredentials, StaticProvider};
+use rusoto_core::request::HttpClient;
 use serde;
 use serde_json;
 use tokio;
@@ -548,17 +551,74 @@ impl Pennsieve {
         api_key: S,
         api_secret: S,
     ) -> Future<response::ApiSession> {
-        let payload = request::ApiLogin::new(api_key.into(), api_secret.into());
-        let this = self.clone();
-        into_future_trait(
-            post!(self, "/account/api/session", params!(), &payload).and_then(
-                move |login_response: response::ApiSession| {
-                    this.inner.lock().unwrap().session_token =
-                        Some(login_response.session_token().clone());
-                    Ok(login_response)
-                },
-            ),
-        )
+        // TODO(jesse) GET RID OF THIS INNER EXECUTOR AND RETURN THE FUTURE LIKE A NORMAL PERSON WOULD
+        warn!("Spawning new `current_thread` executor, this function should not create its own executor.");
+
+        let mut runtime = tokio::runtime::current_thread::Runtime::new().unwrap();
+
+        let config_response: serde_json::Value = runtime
+            .block_on(get!(self, "/authentication/cognito-config"))
+            .unwrap();
+
+        let cognito = rusoto_cognito_idp::CognitoIdentityProviderClient::new_with(
+            HttpClient::new().expect("failed to create request dispatcher"),
+            StaticProvider::from(AwsCredentials::default()),
+            rusoto_core::region::Region::UsEast1,
+        );
+
+        let mut auth_parameters = HashMap::<String, String>::new();
+        auth_parameters.insert("USERNAME".to_string(), api_key.into());
+        auth_parameters.insert("PASSWORD".to_string(), api_secret.into());
+
+        let request = InitiateAuthRequest {
+            analytics_metadata: None,
+            auth_flow: "USER_PASSWORD_AUTH".to_string(),
+            auth_parameters: Some(auth_parameters),
+            client_id: config_response["tokenPool"]["appClientId"]
+                .as_str()
+                .unwrap()
+                .to_string(),
+            client_metadata: None,
+            user_context_data: None,
+        };
+
+        match runtime.block_on(cognito.initiate_auth(request)) {
+            Ok(response) => {
+                let id_token = response
+                    .clone()
+                    .authentication_result
+                    .unwrap()
+                    .id_token
+                    .unwrap();
+
+                let id_token_string = id_token.to_string();
+                let payload_parts: Vec<&str> = id_token_string.split(".").collect();
+                let payload_b64 = base64_url::decode(payload_parts[1]).unwrap();
+                let payload_str = std::str::from_utf8(&payload_b64).unwrap();
+                let payload: serde_json::Value = serde_json::from_str(payload_str).unwrap();
+                let organization_node_id = payload["custom:organization_node_id"].as_str().unwrap();
+
+                self.set_current_organization(Some(&OrganizationId::new(organization_node_id)));
+
+                let access_token = response
+                    .clone()
+                    .authentication_result
+                    .unwrap()
+                    .access_token
+                    .unwrap();
+
+                let session_token = SessionToken::new(access_token);
+                self.inner.lock().unwrap().session_token = Some(session_token.clone());
+
+                into_future_trait(futures::finished(response::ApiSession::new(
+                    session_token,
+                    organization_node_id.to_string(),
+                    payload["exp"].as_i64().unwrap() as i32,
+                )))
+            }
+
+            Err(err) => into_future_trait(futures::failed(err.into())),
+        }
     }
 
     /// Get the current user.

@@ -164,6 +164,9 @@ pub enum ErrorKind {
 
     #[fail(display = "error parsing string: {}", error)]
     ParseIntError { error: String },
+
+    #[fail(display = "error initiating authentication: {}", error)]
+    InitiateAuthError { error: String },
 }
 
 impl From<ErrorKind> for Error {
@@ -238,6 +241,14 @@ impl From<ToStrError> for Error {
 impl From<num::ParseIntError> for Error {
     fn from(error: num::ParseIntError) -> Error {
         Error::from(Context::new(ErrorKind::ParseIntError {
+            error: error.to_string(),
+        }))
+    }
+}
+
+impl From<rusoto_core::RusotoError<rusoto_cognito_idp::InitiateAuthError>> for Error {
+    fn from(error: rusoto_core::RusotoError<rusoto_cognito_idp::InitiateAuthError>) -> Error {
+        Error::from(Context::new(ErrorKind::InitiateAuthError {
             error: error.to_string(),
         }))
     }

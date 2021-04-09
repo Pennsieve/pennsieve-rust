@@ -755,7 +755,7 @@ mod tests {
         let s3_file = FileUpload::new_recursive_upload(UploadId(1), file, file_copy)
             .and_then(|file_upload| file_upload.to_s3_file());
 
-        assert!(s3_file.is_err(), true);
+        assert!(s3_file.is_err());
     }
 
     #[test]

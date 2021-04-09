@@ -57,7 +57,9 @@ impl FromStr for Environment {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_lowercase().as_ref() {
             // Alias dev to non-prod:
-            "dev" | "development" | "non-prod" | "nonprod" | "nonproduction" => Ok(Environment::NonProduction),
+            "dev" | "development" | "non-prod" | "nonprod" | "nonproduction" => {
+                Ok(Environment::NonProduction)
+            }
             "local" => Ok(Environment::Local),
             "prod" | "production" => Ok(Environment::Production),
             _ => Err(Error::env_parse_error(s)),

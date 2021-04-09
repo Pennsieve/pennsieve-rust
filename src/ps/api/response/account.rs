@@ -12,6 +12,14 @@ pub struct ApiSession {
 }
 
 impl ApiSession {
+    pub fn new(session_token: model::SessionToken, organization: String, expires_in: i32) -> Self {
+        Self {
+            session_token,
+            organization,
+            expires_in,
+        }
+    }
+
     pub fn session_token(&self) -> &model::SessionToken {
         &self.session_token
     }

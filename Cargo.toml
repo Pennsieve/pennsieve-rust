@@ -6,6 +6,7 @@ publish = false
 edition = "2018"
 
 [dependencies]
+base64-url = "1.4.9"
 chrono = { version = "^0.4", features = ["serde"] }
 sha2 = "^0.8"
 failure = "^0.1"
@@ -17,6 +18,8 @@ itertools = "^0.8"
 lazy_static = "^1.4"
 log = "^0.4"
 rand = "^0.7"
+rusoto_cognito_idp = "0.42.0"
+rusoto_core = "0.42.0"
 serde = "^1.0"
 serde_derive = "^1.0"
 serde_json = "^1.0"
