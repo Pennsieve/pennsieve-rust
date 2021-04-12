@@ -81,7 +81,10 @@ impl Error {
     }
 
     pub fn initiate_auth_error<S: Into<String>>(error: S) -> Error {
-        ErrorKind::InitiateAuthError { error: error.into() }.into()
+        ErrorKind::InitiateAuthError {
+            error: error.into(),
+        }
+        .into()
     }
 }
 

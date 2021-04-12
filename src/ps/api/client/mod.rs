@@ -24,7 +24,7 @@ use serde;
 use serde_json;
 use tokio;
 
-#[cfg(test)]
+#[cfg(feature = "mocks")]
 use mockito;
 
 use super::request::chunked_http::ChunkedFilePayload;
@@ -37,6 +37,9 @@ use crate::ps::model::{
 };
 use crate::ps::util::futures::{into_future_trait, into_stream_trait};
 use crate::ps::{Error, ErrorKind, Future, Result, Stream};
+
+use futures::future::Either;
+#[cfg(feature = "mocks")]
 use url::Url;
 
 // Pennsieve session authentication header:
@@ -235,10 +238,10 @@ impl Pennsieve {
     }
 
     fn get_url(&self) -> url::Url {
-        #[cfg(test)]
+        #[cfg(feature = "mocks")]
         let url = mockito::server_url().parse::<Url>().unwrap();
 
-        #[cfg(not(test))]
+        #[cfg(not(feature = "mocks"))]
         let url = self.inner.lock().unwrap().config.env().url().clone();
 
         url
@@ -575,6 +578,18 @@ impl Pennsieve {
 
         into_future_trait(get!(self, "/authentication/cognito-config").and_then(
             move |config_response: serde_json::Value| {
+                if let None = config_response.get("tokenPool") {
+                    return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
+                        "Cognito response missing token pool.",
+                    )));
+                }
+
+                if let None = config_response["tokenPool"].get("appClientId") {
+                    return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
+                        "Cognito response missing token pool client id.",
+                    )));
+                }
+
                 let request = InitiateAuthRequest {
                     analytics_metadata: None,
                     auth_flow: "USER_PASSWORD_AUTH".to_string(),
@@ -586,45 +601,49 @@ impl Pennsieve {
                     client_metadata: None,
                     user_context_data: None,
                 };
-                cognito
-                    .initiate_auth(request)
-                    .and_then(move |response| {
-                        let id_token = response
-                            .clone()
-                            .authentication_result
-                            .unwrap()
-                            .id_token
-                            .unwrap();
 
-                        let id_token_string = id_token.to_string();
-                        let payload_parts: Vec<&str> = id_token_string.split(".").collect();
-                        let payload_b64 = base64_url::decode(payload_parts[1]).unwrap();
-                        let payload_str = std::str::from_utf8(&payload_b64).unwrap();
-                        let payload: serde_json::Value = serde_json::from_str(payload_str).unwrap();
-                        let organization_node_id =
-                            payload["custom:organization_node_id"].as_str().unwrap();
+                Either::B(
+                    cognito
+                        .initiate_auth(request)
+                        .and_then(move |response| {
+                            let id_token = response
+                                .clone()
+                                .authentication_result
+                                .unwrap()
+                                .id_token
+                                .unwrap();
 
-                        this.set_current_organization(Some(&OrganizationId::new(
-                            organization_node_id,
-                        )));
+                            let id_token_string = id_token.to_string();
+                            let payload_parts: Vec<&str> = id_token_string.split(".").collect();
+                            let payload_b64 = base64_url::decode(payload_parts[1]).unwrap();
+                            let payload_str = std::str::from_utf8(&payload_b64).unwrap();
+                            let payload: serde_json::Value =
+                                serde_json::from_str(payload_str).unwrap();
+                            let organization_node_id =
+                                payload["custom:organization_node_id"].as_str().unwrap();
 
-                        let access_token = response
-                            .clone()
-                            .authentication_result
-                            .unwrap()
-                            .access_token
-                            .unwrap();
+                            this.set_current_organization(Some(&OrganizationId::new(
+                                organization_node_id,
+                            )));
 
-                        let session_token = SessionToken::new(access_token);
-                        this.set_session_token(Some(session_token.clone()));
+                            let access_token = response
+                                .clone()
+                                .authentication_result
+                                .unwrap()
+                                .access_token
+                                .unwrap();
 
-                        into_future_trait(future::ok(response::ApiSession::new(
-                            session_token,
-                            organization_node_id.to_string(),
-                            payload["exp"].as_i64().unwrap() as i32,
-                        )))
-                    })
-                    .map_err(Into::into)
+                            let session_token = SessionToken::new(access_token);
+                            this.set_session_token(Some(session_token.clone()));
+
+                            into_future_trait(future::ok(response::ApiSession::new(
+                                session_token,
+                                organization_node_id.to_string(),
+                                payload["exp"].as_i64().unwrap() as i32,
+                            )))
+                        })
+                        .map_err(Into::into),
+                )
             },
         ))
     }
@@ -1216,7 +1235,6 @@ impl Pennsieve {
                 .or_else(move |err| {
 
                     debug!("Upload encountered an error: {error}", error = err);
-
                     match err.kind() {
                         // error cannot be retried, bubble up the error
                         ErrorKind::ApiError{ status_code, .. } if NONRETRYABLE_STATUS_CODES.contains(status_code) => {
@@ -1412,14 +1430,16 @@ pub mod tests {
     }
 
     #[test]
+    #[cfg_attr(not(feature = "mocks"), ignore)]
     fn login_returns_error_when_no_token_pool_config_present() {
         let ps = ps();
 
-        let _ = mock("GET", "authentication/cognito-config").with_status(200).create();
+        let _mock = mock("GET", "/authentication/cognito-config")
+            .with_status(200)
+            .with_body("{}")
+            .create();
 
-        let result = run(&ps, move |ps| {
-            ps.login(TEST_API_KEY, TEST_SECRET_KEY)
-        });
+        let result = run(&ps, move |ps| ps.login(TEST_API_KEY, TEST_SECRET_KEY));
 
         assert!(result.is_err());
         assert!(ps.session_token().is_none());
@@ -1427,20 +1447,24 @@ pub mod tests {
         if let Err(error) = result {
             assert_eq!(
                 error.kind(),
-                crate::ps::Error::initiate_auth_error("Cognito response missing token pool.").kind()
+                crate::ps::Error::initiate_auth_error("Cognito response missing token pool.")
+                    .kind()
             );
         }
     }
 
     #[test]
+    #[cfg_attr(not(feature = "mocks"), ignore)]
     fn login_returns_error_when_no_token_pool_client_id_config_present() {
         let ps = ps();
+        let body = " { \"tokenPool\": {} } ";
 
-        mock("GET", "authentication/cognito-config").with_status(200);
+        let _mock = mock("GET", "/authentication/cognito-config")
+            .with_status(200)
+            .with_body(body)
+            .create();
 
-        let result = run(&ps, move |ps| {
-            ps.login(TEST_API_KEY, TEST_SECRET_KEY)
-        });
+        let result = run(&ps, move |ps| ps.login(TEST_API_KEY, TEST_SECRET_KEY));
 
         assert!(result.is_err());
         assert!(ps.session_token().is_none());
@@ -1448,7 +1472,10 @@ pub mod tests {
         if let Err(error) = result {
             assert_eq!(
                 error.kind(),
-                crate::ps::Error::initiate_auth_error("Cognito response missing token pool.").kind()
+                crate::ps::Error::initiate_auth_error(
+                    "Cognito response missing token pool client id."
+                )
+                .kind()
             );
         }
     }
