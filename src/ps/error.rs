@@ -7,6 +7,7 @@ use std::{fmt, io, num, result};
 use failure::{Backtrace, Context, Fail};
 
 use hyper::http::header::ToStrError;
+use base64_url::base64;
 
 /// Type alias for handling errors throughout the agent
 pub type Result<T> = result::Result<T, Error>;
@@ -255,6 +256,14 @@ impl From<num::ParseIntError> for Error {
 
 impl From<rusoto_core::RusotoError<rusoto_cognito_idp::InitiateAuthError>> for Error {
     fn from(error: rusoto_core::RusotoError<rusoto_cognito_idp::InitiateAuthError>) -> Error {
+        Error::from(Context::new(ErrorKind::InitiateAuthError {
+            error: error.to_string(),
+        }))
+    }
+}
+
+impl From<base64::DecodeError> for Error {
+    fn from(error: base64::DecodeError) -> Error {
         Error::from(Context::new(ErrorKind::InitiateAuthError {
             error: error.to_string(),
         }))
