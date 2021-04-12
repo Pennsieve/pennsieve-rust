@@ -79,6 +79,10 @@ impl Error {
     pub fn invalid_unicode_path(path: PathBuf) -> Error {
         ErrorKind::InvalidUnicodePath { path }.into()
     }
+
+    pub fn initiate_auth_error<S: Into<String>>(error: S) -> Error {
+        ErrorKind::InitiateAuthError { error: error.into() }.into()
+    }
 }
 
 impl Fail for Error {

@@ -24,6 +24,9 @@ use serde;
 use serde_json;
 use tokio;
 
+#[cfg(test)]
+use mockito;
+
 use super::request::chunked_http::ChunkedFilePayload;
 use super::{request, response};
 use crate::ps::config::{Config, Environment};
@@ -34,6 +37,7 @@ use crate::ps::model::{
 };
 use crate::ps::util::futures::{into_future_trait, into_stream_trait};
 use crate::ps::{Error, ErrorKind, Future, Result, Stream};
+use url::Url;
 
 // Pennsieve session authentication header:
 const X_SESSION_ID: &str = "X-SESSION-ID";
@@ -231,7 +235,13 @@ impl Pennsieve {
     }
 
     fn get_url(&self) -> url::Url {
-        self.inner.lock().unwrap().config.env().url().clone()
+        #[cfg(test)]
+        let url = mockito::server_url().parse::<Url>().unwrap();
+
+        #[cfg(not(test))]
+        let url = self.inner.lock().unwrap().config.env().url().clone();
+
+        url
     }
 
     /// Make a request to the given route using the given json payload
@@ -1266,6 +1276,7 @@ pub mod tests {
     use std::{fs, path, result, sync, thread};
 
     use lazy_static::lazy_static;
+    use mockito::mock;
 
     // use ps::api::{PSChildren, PSId, PSName};
     use crate::ps::config::Environment;
@@ -1398,6 +1409,48 @@ pub mod tests {
         });
         assert!(result.is_err());
         assert!(ps.session_token().is_none());
+    }
+
+    #[test]
+    fn login_returns_error_when_no_token_pool_config_present() {
+        let ps = ps();
+
+        let _ = mock("GET", "authentication/cognito-config").with_status(200).create();
+
+        let result = run(&ps, move |ps| {
+            ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+        });
+
+        assert!(result.is_err());
+        assert!(ps.session_token().is_none());
+
+        if let Err(error) = result {
+            assert_eq!(
+                error.kind(),
+                crate::ps::Error::initiate_auth_error("Cognito response missing token pool.").kind()
+            );
+        }
+    }
+
+    #[test]
+    fn login_returns_error_when_no_token_pool_client_id_config_present() {
+        let ps = ps();
+
+        mock("GET", "authentication/cognito-config").with_status(200);
+
+        let result = run(&ps, move |ps| {
+            ps.login(TEST_API_KEY, TEST_SECRET_KEY)
+        });
+
+        assert!(result.is_err());
+        assert!(ps.session_token().is_none());
+
+        if let Err(error) = result {
+            assert_eq!(
+                error.kind(),
+                crate::ps::Error::initiate_auth_error("Cognito response missing token pool.").kind()
+            );
+        }
     }
 
     #[test]
