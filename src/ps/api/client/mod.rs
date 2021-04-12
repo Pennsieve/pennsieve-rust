@@ -578,26 +578,32 @@ impl Pennsieve {
 
         into_future_trait(get!(self, "/authentication/cognito-config").and_then(
             move |config_response: serde_json::Value| {
-                if let None = config_response.get("tokenPool") {
-                    return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
-                        "Cognito response missing token pool.",
-                    )));
-                }
+                let token_pool_value = match config_response.get("tokenPool") {
+                    Some(value) => value,
+                    None => return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
+                        "Pennsieve server Cognito config missing token pool.",
+                    )))
+                };
 
-                if let None = config_response["tokenPool"].get("appClientId") {
-                    return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
-                        "Cognito response missing token pool client id.",
-                    )));
-                }
+                let app_client_id_value = match token_pool_value.get("appClientId") {
+                    Some(value) => value,
+                    None => return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
+                        "Pennsieve server Cognito config missing token pool client id.",
+                    )))
+                };
+
+                let app_client_id = match app_client_id_value.as_str() {
+                    Some(str) => str,
+                    None => return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
+                        "Pennsieve server Cognito config token pool client id could not be interpreted as a string.",
+                    )))
+                }.to_string();
 
                 let request = InitiateAuthRequest {
                     analytics_metadata: None,
                     auth_flow: "USER_PASSWORD_AUTH".to_string(),
                     auth_parameters: Some(auth_parameters),
-                    client_id: config_response["tokenPool"]["appClientId"]
-                        .as_str()
-                        .unwrap()
-                        .to_string(),
+                    client_id: app_client_id,
                     client_metadata: None,
                     user_context_data: None,
                 };
@@ -1447,8 +1453,10 @@ pub mod tests {
         if let Err(error) = result {
             assert_eq!(
                 error.kind(),
-                crate::ps::Error::initiate_auth_error("Cognito response missing token pool.")
-                    .kind()
+                crate::ps::Error::initiate_auth_error(
+                    "Pennsieve server Cognito config missing token pool."
+                )
+                .kind()
             );
         }
     }
@@ -1473,9 +1481,36 @@ pub mod tests {
             assert_eq!(
                 error.kind(),
                 crate::ps::Error::initiate_auth_error(
-                    "Cognito response missing token pool client id."
+                    "Pennsieve server Cognito config missing token pool client id."
                 )
                 .kind()
+            );
+        }
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "mocks"), ignore)]
+    fn login_returns_error_when_token_pool_client_id_is_not_a_string() {
+        let ps = ps();
+        let body = " { \"tokenPool\": { \"appClientId\": [] } } ";
+
+        let _mock = mock("GET", "/authentication/cognito-config")
+            .with_status(200)
+            .with_body(body)
+            .create();
+
+        let result = run(&ps, move |ps| ps.login(TEST_API_KEY, TEST_SECRET_KEY));
+
+        assert!(result.is_err());
+        assert!(ps.session_token().is_none());
+
+        if let Err(error) = result {
+            assert_eq!(
+                error.kind(),
+                crate::ps::Error::initiate_auth_error(
+                    "Pennsieve server Cognito config token pool client id could not be interpreted as a string."
+                )
+                    .kind()
             );
         }
     }
