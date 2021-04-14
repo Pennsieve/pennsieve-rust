@@ -38,7 +38,6 @@ use crate::ps::model::{
 use crate::ps::util::futures::{into_future_trait, into_stream_trait};
 use crate::ps::{Error, ErrorKind, Future, Result, Stream};
 
-use futures::future::Either;
 #[cfg(feature = "mocks")]
 use url::Url;
 
@@ -578,26 +577,13 @@ impl Pennsieve {
 
         into_future_trait(get!(self, "/authentication/cognito-config").and_then(
             move |config_response: serde_json::Value| {
-                let token_pool_value = match config_response.get("tokenPool") {
-                    Some(value) => value,
-                    None => return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
-                        "Pennsieve server Cognito config missing token pool.",
-                    )))
-                };
-
-                let app_client_id_value = match token_pool_value.get("appClientId") {
-                    Some(value) => value,
-                    None => return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
-                        "Pennsieve server Cognito config missing token pool client id.",
-                    )))
-                };
-
-                let app_client_id = match app_client_id_value.as_str() {
-                    Some(str) => str,
-                    None => return Either::A(futures::failed(crate::ps::Error::initiate_auth_error(
-                        "Pennsieve server Cognito config token pool client id could not be interpreted as a string.",
-                    )))
-                }.to_string();
+                let app_client_id = config_response.get("tokenPool")
+                    .ok_or(crate::ps::Error::initiate_auth_error("Pennsieve server Cognito config missing token pool."))?
+                    .get("appClientId")
+                    .ok_or(crate::ps::Error::initiate_auth_error("Pennsieve server Cognito config missing token pool client id."))?
+                    .as_str()
+                    .ok_or(crate::ps::Error::initiate_auth_error("Cognito application client ID is not a string"))?
+                    .to_string();
 
                 let request = InitiateAuthRequest {
                     analytics_metadata: None,
@@ -608,89 +594,54 @@ impl Pennsieve {
                     user_context_data: None,
                 };
 
-                Either::B(
-                    cognito
-                        .initiate_auth(request)
-                        .map_err(Into::into)
-                        .and_then(move |response| {
-                            let authentication_result = match response.clone().authentication_result {
-                                Some(value) => value,
-                                None => return into_future_trait(futures::failed(crate::ps::Error::initiate_auth_error(
-                                    "No authentication result, does another challenge need to be passed?"
-                                )))
-                            };
+                Ok(request)
+            }
+        )
+        .and_then(move |request| {
+            cognito
+                .initiate_auth(request)
+                .map_err(Into::into)
+                .and_then(move |response| {
+                    let authentication_result = response.clone().authentication_result
+                        .ok_or(crate::ps::Error::initiate_auth_error("No authentication result, does another challenge need to be passed?"))?;
 
-                            let access_token = match authentication_result.access_token {
-                                Some(string) => string,
-                                None => return into_future_trait(futures::failed(crate::ps::Error::initiate_auth_error(
-                                    "No access token in the Cognito initiate auth response."
-                                )))
-                            };
+                    let access_token = authentication_result.access_token
+                        .ok_or(crate::ps::Error::initiate_auth_error("No access token in the Cognito initiate auth response."))?;
+                    
+                    let id_token = authentication_result.id_token
+                        .ok_or(crate::ps::Error::initiate_auth_error(
+                            "No ID token in the Cognito initiate auth response."
+                        ))?;
 
-                            let id_token = match authentication_result.id_token {
-                                Some(string) => string,
-                                None => return into_future_trait(futures::failed(crate::ps::Error::initiate_auth_error(
-                                    "No ID token in the Cognito initiate auth response."
-                                )))
-                            };
+                    let payload_parts: Vec<&str> = id_token.split(".").collect();
+                    let payload_b64 = base64_url::decode(payload_parts[1])?;
+                    let payload_str = std::str::from_utf8(&payload_b64).map_err(|err| 
+                        crate::ps::Error::initiate_auth_error(err.to_string())
+                    )?;
+                    let payload: serde_json::Value = serde_json::from_str(payload_str)?;
 
-                            let id_token_string = id_token.to_string();
-                            let payload_parts: Vec<&str> = id_token_string.split(".").collect();
+                    let organization_node_id_value = payload.get("custom:organization_node_id")
+                        .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload does not have the `custom:organization_node_id` property"))?;
 
-                            let payload_b64 = match base64_url::decode(payload_parts[1]) {
-                                Ok(b64) => b64,
-                                Err(error) => return into_future_trait(futures::failed(error.into()))
-                            };
+                    let organization_node_id = organization_node_id_value.as_str()
+                        .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload `custom:organization_node_id` is not a string."))?;
+                    
+                    let exp = payload["exp"].as_i64()
+                        .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload does not have an expiration date `exp`."))?;
 
-                            let payload_str = match std::str::from_utf8(&payload_b64) {
-                                Ok(str) => str,
-                                Err(error) => return into_future_trait(futures::failed(
-                                    crate::ps::Error::initiate_auth_error(format!("Cognito response payload is not UTF-8. Reason: {}", error.to_string()))
-                                ))
-                            };
+                    this.set_current_organization(Some(&OrganizationId::new(
+                        organization_node_id,
+                    )));
 
-                            let payload: serde_json::Value = match serde_json::from_str(payload_str) {
-                                Ok(value) => value,
-                                Err(error) => return into_future_trait(futures::failed(
-                                    crate::ps::Error::initiate_auth_error(format!("Cognito response payload is not json. Reason: {}", error.to_string()))
-                                ))
-                            };
+                    let session_token = SessionToken::new(access_token);
+                    this.set_session_token(Some(session_token.clone()));
 
-                            let organization_node_id_value = match payload.get("custom:organization_node_id") {
-                                Some(value) => value,
-                                None => return into_future_trait(futures::failed(
-                                    crate::ps::Error::initiate_auth_error("Cognito response payload does not have the `custom:organization_node_id` property")
-                                ))
-                            };
-
-                            let organization_node_id = match organization_node_id_value.as_str() {
-                                Some(str) => str,
-                                None => return into_future_trait(futures::failed(
-                                    crate::ps::Error::initiate_auth_error("Cognito response payload `custom:organization_node_id` is not a string.")
-                                ))
-                            };
-
-                            let exp = match payload["exp"].as_i64() {
-                                Some(i64) => i64,
-                                None => return into_future_trait(futures::failed(
-                                    crate::ps::Error::initiate_auth_error("Cognito response payload does not have an expiration date `exp`.")
-                                ))
-                            } as i32;
-
-                            this.set_current_organization(Some(&OrganizationId::new(
-                                organization_node_id,
-                            )));
-
-                            let session_token = SessionToken::new(access_token);
-                            this.set_session_token(Some(session_token.clone()));
-
-                            into_future_trait(future::ok(response::ApiSession::new(
-                                session_token,
-                                organization_node_id.to_string(),
-                                exp
-                            )))
-                        }),
-                )
+                    Ok(response::ApiSession::new(
+                        session_token,
+                        organization_node_id.to_string(),
+                        exp as i32
+                    ))
+                })
             },
         ))
     }
