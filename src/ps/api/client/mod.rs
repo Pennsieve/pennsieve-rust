@@ -1818,7 +1818,7 @@ pub mod tests {
             .collect();
         collaborators.sort();
 
-        let expected = ("Jeremy".to_string(), "owner".to_string());
+        let expected = ("Bo".to_string(), "owner".to_string());
 
         assert!(collaborators.contains(&expected));
     }
