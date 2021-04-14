@@ -607,7 +607,7 @@ impl Pennsieve {
 
                     let access_token = authentication_result.access_token
                         .ok_or(crate::ps::Error::initiate_auth_error("No access token in the Cognito initiate auth response."))?;
-                    
+
                     let id_token = authentication_result.id_token
                         .ok_or(crate::ps::Error::initiate_auth_error(
                             "No ID token in the Cognito initiate auth response."
@@ -615,9 +615,9 @@ impl Pennsieve {
 
                     let payload_parts: Vec<&str> = id_token.split(".").collect();
                     let payload_b64 = base64_url::decode(payload_parts[1])?;
-                    let payload_str = std::str::from_utf8(&payload_b64).map_err(|err| 
+                    let payload_str = std::str::from_utf8(&payload_b64).map_err(|err| {
                         crate::ps::Error::initiate_auth_error(err.to_string())
-                    )?;
+                    })?;
                     let payload: serde_json::Value = serde_json::from_str(payload_str)?;
 
                     let organization_node_id_value = payload.get("custom:organization_node_id")
@@ -625,7 +625,6 @@ impl Pennsieve {
 
                     let organization_node_id = organization_node_id_value.as_str()
                         .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload `custom:organization_node_id` is not a string."))?;
-                    
                     let exp = payload["exp"].as_i64()
                         .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload does not have an expiration date `exp`."))?;
 

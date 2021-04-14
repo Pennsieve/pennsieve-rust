@@ -6,8 +6,8 @@ use std::{fmt, io, num, result};
 
 use failure::{Backtrace, Context, Fail};
 
-use hyper::http::header::ToStrError;
 use base64_url::base64;
+use hyper::http::header::ToStrError;
 
 /// Type alias for handling errors throughout the agent
 pub type Result<T> = result::Result<T, Error>;
