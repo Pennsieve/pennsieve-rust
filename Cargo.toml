@@ -1,6 +1,6 @@
 [package]
 name = "pennsieve-rust"
-version = "0.13.0"
+version = "0.15.2"
 authors = ["Pennsieve <https://github.com/Pennsieve/pennsieve-rust>"]
 publish = false
 edition = "2018"
