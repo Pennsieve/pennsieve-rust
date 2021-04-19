@@ -24,6 +24,9 @@ use serde;
 use serde_json;
 use tokio;
 
+#[cfg(feature = "mocks")]
+use mockito;
+
 use super::request::chunked_http::ChunkedFilePayload;
 use super::{request, response};
 use crate::ps::config::{Config, Environment};
@@ -34,6 +37,9 @@ use crate::ps::model::{
 };
 use crate::ps::util::futures::{into_future_trait, into_stream_trait};
 use crate::ps::{Error, ErrorKind, Future, Result, Stream};
+
+#[cfg(feature = "mocks")]
+use url::Url;
 
 // Pennsieve session authentication header:
 const X_SESSION_ID: &str = "X-SESSION-ID";
@@ -231,7 +237,13 @@ impl Pennsieve {
     }
 
     fn get_url(&self) -> url::Url {
-        self.inner.lock().unwrap().config.env().url().clone()
+        #[cfg(feature = "mocks")]
+        let url = mockito::server_url().parse::<Url>().unwrap();
+
+        #[cfg(not(feature = "mocks"))]
+        let url = self.inner.lock().unwrap().config.env().url().clone();
+
+        url
     }
 
     /// Make a request to the given route using the given json payload
@@ -565,56 +577,70 @@ impl Pennsieve {
 
         into_future_trait(get!(self, "/authentication/cognito-config").and_then(
             move |config_response: serde_json::Value| {
+                let app_client_id = config_response.get("tokenPool")
+                    .ok_or(crate::ps::Error::initiate_auth_error("Pennsieve server Cognito config missing token pool."))?
+                    .get("appClientId")
+                    .ok_or(crate::ps::Error::initiate_auth_error("Pennsieve server Cognito config missing token pool client id."))?
+                    .as_str()
+                    .ok_or(crate::ps::Error::initiate_auth_error("Cognito application client ID is not a string"))?
+                    .to_string();
+
                 let request = InitiateAuthRequest {
                     analytics_metadata: None,
                     auth_flow: "USER_PASSWORD_AUTH".to_string(),
                     auth_parameters: Some(auth_parameters),
-                    client_id: config_response["tokenPool"]["appClientId"]
-                        .as_str()
-                        .unwrap()
-                        .to_string(),
+                    client_id: app_client_id,
                     client_metadata: None,
                     user_context_data: None,
                 };
-                cognito
-                    .initiate_auth(request)
-                    .and_then(move |response| {
-                        let id_token = response
-                            .clone()
-                            .authentication_result
-                            .unwrap()
-                            .id_token
-                            .unwrap();
 
-                        let id_token_string = id_token.to_string();
-                        let payload_parts: Vec<&str> = id_token_string.split(".").collect();
-                        let payload_b64 = base64_url::decode(payload_parts[1]).unwrap();
-                        let payload_str = std::str::from_utf8(&payload_b64).unwrap();
-                        let payload: serde_json::Value = serde_json::from_str(payload_str).unwrap();
-                        let organization_node_id =
-                            payload["custom:organization_node_id"].as_str().unwrap();
+                Ok(request)
+            }
+        )
+        .and_then(move |request| {
+            cognito
+                .initiate_auth(request)
+                .map_err(Into::into)
+                .and_then(move |response| {
+                    let authentication_result = response.clone().authentication_result
+                        .ok_or(crate::ps::Error::initiate_auth_error("No authentication result, does another challenge need to be passed?"))?;
 
-                        this.set_current_organization(Some(&OrganizationId::new(
-                            organization_node_id,
-                        )));
+                    let access_token = authentication_result.access_token
+                        .ok_or(crate::ps::Error::initiate_auth_error("No access token in the Cognito initiate auth response."))?;
 
-                        let access_token = response
-                            .clone()
-                            .authentication_result
-                            .unwrap()
-                            .access_token
-                            .unwrap();
+                    let id_token = authentication_result.id_token
+                        .ok_or(crate::ps::Error::initiate_auth_error(
+                            "No ID token in the Cognito initiate auth response."
+                        ))?;
 
-                        let session_token = SessionToken::new(access_token);
-                        this.set_session_token(Some(session_token.clone()));
+                    let payload_parts: Vec<&str> = id_token.split(".").collect();
+                    let payload_b64 = base64_url::decode(payload_parts[1])?;
+                    let payload_str = std::str::from_utf8(&payload_b64).map_err(|err| {
+                        crate::ps::Error::initiate_auth_error(err.to_string())
+                    })?;
+                    let payload: serde_json::Value = serde_json::from_str(payload_str)?;
 
-                        into_future_trait(future::ok(response::ApiSession::new(
-                            session_token,
-                            organization_node_id.to_string(),
-                            payload["exp"].as_i64().unwrap() as i32,
-                        )))
-                    })
-                    .map_err(Into::into)
+                    let organization_node_id_value = payload.get("custom:organization_node_id")
+                        .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload does not have the `custom:organization_node_id` property"))?;
+
+                    let organization_node_id = organization_node_id_value.as_str()
+                        .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload `custom:organization_node_id` is not a string."))?;
+                    let exp = payload["exp"].as_i64()
+                        .ok_or(crate::ps::Error::initiate_auth_error("Cognito response payload does not have an expiration date `exp`."))?;
+
+                    this.set_current_organization(Some(&OrganizationId::new(
+                        organization_node_id,
+                    )));
+
+                    let session_token = SessionToken::new(access_token);
+                    this.set_session_token(Some(session_token.clone()));
+
+                    Ok(response::ApiSession::new(
+                        session_token,
+                        organization_node_id.to_string(),
+                        exp as i32
+                    ))
+                })
             },
         ))
     }
@@ -1206,7 +1232,6 @@ impl Pennsieve {
                 .or_else(move |err| {
 
                     debug!("Upload encountered an error: {error}", error = err);
-
                     match err.kind() {
                         // error cannot be retried, bubble up the error
                         ErrorKind::ApiError{ status_code, .. } if NONRETRYABLE_STATUS_CODES.contains(status_code) => {
@@ -1266,6 +1291,7 @@ pub mod tests {
     use std::{fs, path, result, sync, thread};
 
     use lazy_static::lazy_static;
+    use mockito::mock;
 
     // use ps::api::{PSChildren, PSId, PSName};
     use crate::ps::config::Environment;
@@ -1398,6 +1424,86 @@ pub mod tests {
         });
         assert!(result.is_err());
         assert!(ps.session_token().is_none());
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "mocks"), ignore)]
+    fn login_returns_error_when_no_token_pool_config_present() {
+        let ps = ps();
+
+        let _mock = mock("GET", "/authentication/cognito-config")
+            .with_status(200)
+            .with_body("{}")
+            .create();
+
+        let result = run(&ps, move |ps| ps.login(TEST_API_KEY, TEST_SECRET_KEY));
+
+        assert!(result.is_err());
+        assert!(ps.session_token().is_none());
+
+        if let Err(error) = result {
+            assert_eq!(
+                error.kind(),
+                crate::ps::Error::initiate_auth_error(
+                    "Pennsieve server Cognito config missing token pool."
+                )
+                .kind()
+            );
+        }
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "mocks"), ignore)]
+    fn login_returns_error_when_no_token_pool_client_id_config_present() {
+        let ps = ps();
+        let body = " { \"tokenPool\": {} } ";
+
+        let _mock = mock("GET", "/authentication/cognito-config")
+            .with_status(200)
+            .with_body(body)
+            .create();
+
+        let result = run(&ps, move |ps| ps.login(TEST_API_KEY, TEST_SECRET_KEY));
+
+        assert!(result.is_err());
+        assert!(ps.session_token().is_none());
+
+        if let Err(error) = result {
+            assert_eq!(
+                error.kind(),
+                crate::ps::Error::initiate_auth_error(
+                    "Pennsieve server Cognito config missing token pool client id."
+                )
+                .kind()
+            );
+        }
+    }
+
+    #[test]
+    #[cfg_attr(not(feature = "mocks"), ignore)]
+    fn login_returns_error_when_token_pool_client_id_is_not_a_string() {
+        let ps = ps();
+        let body = " { \"tokenPool\": { \"appClientId\": [] } } ";
+
+        let _mock = mock("GET", "/authentication/cognito-config")
+            .with_status(200)
+            .with_body(body)
+            .create();
+
+        let result = run(&ps, move |ps| ps.login(TEST_API_KEY, TEST_SECRET_KEY));
+
+        assert!(result.is_err());
+        assert!(ps.session_token().is_none());
+
+        if let Err(error) = result {
+            assert_eq!(
+                error.kind(),
+                crate::ps::Error::initiate_auth_error(
+                    "Pennsieve server Cognito config token pool client id could not be interpreted as a string."
+                )
+                    .kind()
+            );
+        }
     }
 
     #[test]
@@ -1712,7 +1818,7 @@ pub mod tests {
             .collect();
         collaborators.sort();
 
-        let expected = ("Jeremy".to_string(), "owner".to_string());
+        let expected = ("Bo".to_string(), "owner".to_string());
 
         assert!(collaborators.contains(&expected));
     }
