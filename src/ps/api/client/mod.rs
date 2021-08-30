@@ -292,7 +292,7 @@ impl Pennsieve {
                 )],
                 true,
             ),
-            Err(err) => into_future_trait(futures::failed(err)),
+            Err(err) => into_future_trait(tokio::prelude::future::failed(err)),
         }
     }
 
