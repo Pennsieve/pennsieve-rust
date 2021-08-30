@@ -3,7 +3,8 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
-use futures::Async::Ready;
+// use futures::poll;
+use futures::task::Poll::Ready;
 use sha2::{Digest, Sha256};
 use tokio::prelude::{Async, Stream};
 
