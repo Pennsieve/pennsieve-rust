@@ -1,6 +1,7 @@
 //! Functions to interact with the Pennsieve platform.
 
 pub mod progress;
+mod compat;
 
 pub use self::progress::{ProgressCallback, ProgressUpdate};
 
@@ -356,7 +357,7 @@ impl Pennsieve {
 				try_num: 0,
 			};
 
-			let f = future::loop_fn(retry_state, move |mut retry_state| {
+			let f = compat::loop_fn(retry_state, move |mut retry_state| {
 				retry_state
 					.ps
 					.single_request(
@@ -1204,7 +1205,7 @@ impl Pennsieve {
 			parallelism,
 		};
 
-		let retry_loop = future::loop_fn(ld, |mut ld| {
+		let retry_loop = compat::loop_fn(ld, |mut ld| {
 
 			let ld_err = ld.clone();
 
