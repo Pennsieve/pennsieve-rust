@@ -389,7 +389,7 @@ impl Pennsieve {
 										time::Instant::now() + time::Duration::from_millis(delay);
 									let continue_loop = tokio::timer::Delay::new(deadline)
 										.map_err(Into::into)
-										.map(move |_| future::Loop::Continue(retry_state));
+										.map(move |_| compat::Loop::Continue(retry_state));
 									into_future_trait(continue_loop)
 								}
 							}
@@ -399,7 +399,7 @@ impl Pennsieve {
 									String::from_utf8_lossy(&body),
 								)))
 							}
-							_ => into_future_trait(future::ok(future::Loop::Break(body))),
+							_ => into_future_trait(future::ok(compat::Loop::Break(body))),
 						}
 					})
 			});
@@ -1227,7 +1227,7 @@ impl Pennsieve {
 							ld.parallelism,
 						)
 						.collect()
-						.map(future::Loop::Break)
+						.map(compat::Loop::Break)
 				})
 				.into_future()
 				.or_else(move |err| {
@@ -1255,7 +1255,7 @@ impl Pennsieve {
 										"Attempting to resume missing parts. Attempt {try_num}/{retries})...",
 										try_num = ld_err.try_num, retries = MAX_RETRIES
 									);
-									future::Loop::Continue(ld_err.increment_attempt_count())
+									compat::Loop::Continue(ld_err.increment_attempt_count())
 								});
 							into_future_trait(continue_loop)
 						}
