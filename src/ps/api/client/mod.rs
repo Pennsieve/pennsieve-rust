@@ -1,7 +1,7 @@
 //! Functions to interact with the Pennsieve platform.
 
 pub mod progress;
-mod compat;
+mod compat_loop;
 
 pub use self::progress::{ProgressCallback, ProgressUpdate};
 
@@ -357,7 +357,7 @@ impl Pennsieve {
 				try_num: 0,
 			};
 
-			let f = compat::loop_fn(retry_state, move |mut retry_state| {
+			let f = compat_loop::loop_fn(retry_state, move |mut retry_state| {
 				retry_state
 					.ps
 					.single_request(
@@ -389,7 +389,7 @@ impl Pennsieve {
 										time::Instant::now() + time::Duration::from_millis(delay);
 									let continue_loop = tokio::timer::Delay::new(deadline)
 										.map_err(Into::into)
-										.map(move |_| compat::Loop::Continue(retry_state));
+										.map(move |_| compat_loop::Loop::Continue(retry_state));
 									into_future_trait(continue_loop)
 								}
 							}
@@ -399,7 +399,7 @@ impl Pennsieve {
 									String::from_utf8_lossy(&body),
 								)))
 							}
-							_ => into_future_trait(future::ok(compat::Loop::Break(body))),
+							_ => into_future_trait(future::ok(compat_loop::Loop::Break(body))),
 						}
 					})
 			});
@@ -1205,7 +1205,7 @@ impl Pennsieve {
 			parallelism,
 		};
 
-		let retry_loop = compat::loop_fn(ld, |mut ld| {
+		let retry_loop = compat_loop::loop_fn(ld, |mut ld| {
 
 			let ld_err = ld.clone();
 
@@ -1227,7 +1227,7 @@ impl Pennsieve {
 							ld.parallelism,
 						)
 						.collect()
-						.map(compat::Loop::Break)
+						.map(compat_loop::Loop::Break)
 				})
 				.into_future()
 				.or_else(move |err| {
@@ -1255,7 +1255,7 @@ impl Pennsieve {
 										"Attempting to resume missing parts. Attempt {try_num}/{retries})...",
 										try_num = ld_err.try_num, retries = MAX_RETRIES
 									);
-									compat::Loop::Continue(ld_err.increment_attempt_count())
+									compat_loop::Loop::Continue(ld_err.increment_attempt_count())
 								});
 							into_future_trait(continue_loop)
 						}
