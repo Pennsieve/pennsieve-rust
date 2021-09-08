@@ -39,6 +39,13 @@ use crate::ps::model::{
 use crate::ps::util::futures::{into_future_trait, into_stream_trait};
 use crate::ps::{Error, ErrorKind, Future, Result, Stream};
 
+// these imports are intended to mask 
+// defunct functions in `futures` 
+// using defunct function in `tokio` 
+// and should be replaced with reimplementation 
+// or other libraries in the end 
+use tokio::prelude::stream::futures_unordered;
+
 #[cfg(feature = "mocks")]
 use url::Url;
 
@@ -975,7 +982,7 @@ impl Pennsieve {
 			.clone()
 			.map(|mp| mp.files.into_iter().map(|f| f.file_name).collect());
 
-		let fs = stream::futures_unordered(
+		let fs = tokio::prelude::stream::futures_unordered(
 			files
 				.into_iter()
 				.filter(|file| match &missing_file_names {
@@ -1270,7 +1277,7 @@ impl Pennsieve {
 		})
 		.map(|import_ids| {
 			future::ok::<Stream<ImportId>, Error>(
-				into_stream_trait(stream::futures_unordered(
+				into_stream_trait(tokio::prelude::stream::futures_unordered(
 					import_ids
 						.iter()
 						.map(|import_id| future::ok(import_id.clone())),

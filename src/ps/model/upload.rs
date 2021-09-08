@@ -11,6 +11,15 @@ use serde_derive::{Deserialize, Serialize};
 use crate::ps::util::futures::{into_future_trait, into_stream_trait};
 use crate::ps::{model, Error, Future, Result, Stream};
 
+
+// these imports are intended to mask 
+// defunct functions in `futures` 
+// using defunct function in `tokio` 
+// and should be replaced with reimplementation 
+// or other libraries in the end 
+use tokio::prelude::stream::iter_ok;
+
+
 /// An identifier returned by the Pennsieve platform used to group
 /// a collection of files together for uploading.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -554,7 +563,7 @@ impl S3File {
     pub fn chunks<P: AsRef<Path>>(&self, from_path: P, chunk_size: u64) -> Stream<S3FileChunk> {
         let file_path = from_path.as_ref().join(self.file_name.clone());
         match file_chunks(file_path, self.size(), chunk_size) {
-            Ok(ch) => into_stream_trait(stream::iter_ok(ch)),
+            Ok(ch) => into_stream_trait(tokio::prelude::stream::iter_ok(ch)),
             Err(e) => into_stream_trait(stream::once(Err(e))),
         }
     }
