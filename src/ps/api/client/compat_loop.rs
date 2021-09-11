@@ -69,13 +69,13 @@ pub(crate) trait SinkCompat<I, E> {
 	fn send_all_compat<S>(self, stream: S) -> SendAllCompat<Self, S>
 	where
 		S: Stream<Item = I> + Unpin,
-		Self: Sink<I, SinkError = E> + Sized + Unpin,
+		Self: Sink<I> + Sized + Unpin,
 	{
 		SendAllCompat::new(self, stream)
 	}
 }
 
-impl<T, E, S: Sink<T, SinkError = E>> SinkCompat<T, E> for S {}
+impl<T, E, S: Sink<T>> SinkCompat<T, E> for S {}
 
 #[derive(Debug)]
 #[must_use = "futures do nothing unless polled"]
