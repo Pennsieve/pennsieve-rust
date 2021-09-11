@@ -15,9 +15,9 @@ use futures::*;
 // See https://github.com/rust-lang/rust/issues/34511 for tracking the status
 // of `impl traits`.
 #[allow(dead_code)]
-pub fn into_future_trait<F, I, E>(f: F) -> Box<dyn Future<Item = I, Error = E> + Send>
+pub fn into_future_trait<F, I, E>(f: F) -> Box<dyn Future<Output = Result<T>, E>> + Send>
 where
-    F: 'static + Send + Future<Item = I, Error = E>,
+    F: 'static + Send + Future<Output = Result<T>, E>,
 {
     Box::new(f)
 }
