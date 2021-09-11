@@ -17,15 +17,15 @@ use futures::*;
 #[allow(dead_code)]
 pub fn into_future_trait<F, I, E>(f: F) -> Box<dyn Future<Output = Result<I, E>> + Send>
 where
-    F: 'static + Send + Future<Output = Result<I, E>>,
+	F: 'static + Send + Future<Output = Result<I, E>>,
 {
-    Box::new(f)
+	Box::new(f)
 }
 
 #[allow(dead_code)]
 pub fn into_stream_trait<S, I, E>(s: S) -> Box<dyn Stream<Item = I> + Send>
 where
-    S: 'static + Send + Stream<Item = I>,
+	S: 'static + Send + Stream<Item = I>,
 {
-    Box::new(s)
+	Box::new(s)
 }
