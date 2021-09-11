@@ -44,7 +44,16 @@ use crate::ps::{Error, ErrorKind, Future, Result, Stream};
 // using defunct function in `tokio` 
 // and should be replaced with reimplementation 
 // or other libraries in the end 
-use tokio::prelude::stream::futures_unordered;
+
+
+fn into_futures_unordered<T>(f: T) 
+	-> stream::futures_unordered::FuturesUnordered<T>
+	where T: _Future 
+{
+	let fs = stream::futures_unordered::FuturesUnordered::new();
+	fs.push(f);
+	return fs;
+}
 
 #[cfg(feature = "mocks")]
 use url::Url;
@@ -300,7 +309,7 @@ impl Pennsieve {
 				)],
 				true,
 			),
-			Err(err) => into_future_trait(tokio::prelude::future::failed(err)),
+			Err(err) => into_future_trait(futures::failed(err)),
 		}
 	}
 
@@ -981,8 +990,9 @@ impl Pennsieve {
 		let missing_file_names: Option<Vec<String>> = missing_parts
 			.clone()
 			.map(|mp| mp.files.into_iter().map(|f| f.file_name).collect());
+			
 
-		let fs = tokio::prelude::stream::futures_unordered(
+		let fs = into_futures_unordered(
 			files
 				.into_iter()
 				.filter(|file| match &missing_file_names {
@@ -991,7 +1001,7 @@ impl Pennsieve {
 				})
 				.zip(iter::repeat(path.as_ref().to_path_buf()))
 				.map(|file| future::ok::<(model::S3File, PathBuf), Error>(file.clone())),
-		)
+		) 
 		.map(move |(file, path): (model::S3File, PathBuf)| {
 			let mut file_path = path.clone();
 			let file = file.clone();
@@ -1155,6 +1165,8 @@ impl Pennsieve {
 		)
 	}
 
+
+
 	pub fn upload_file_chunks_with_retries<P, C>(
 		&self,
 		organization_id: &OrganizationId,
@@ -1277,7 +1289,7 @@ impl Pennsieve {
 		})
 		.map(|import_ids| {
 			future::ok::<Stream<ImportId>, Error>(
-				into_stream_trait(tokio::prelude::stream::futures_unordered(
+				into_stream_trait(into_futures_unordered(
 					import_ids
 						.iter()
 						.map(|import_id| future::ok(import_id.clone())),
