@@ -338,7 +338,7 @@ impl Pennsieve {
 		route: S,
 		method: Method,
 		params: I,
-		body: Vec<u8>,
+		body1: Vec<u8>,
 		additional_headers: Vec<(HeaderName, HeaderValue)>,
 		retry_on_failure: bool,
 	) -> Future<Q>
@@ -368,7 +368,7 @@ impl Pennsieve {
 				route,
 				params,
 				method,
-				body,
+				body: body1, 
 				additional_headers,
 				try_num: 0,
 			};
@@ -426,7 +426,7 @@ impl Pennsieve {
 					route,
 					params,
 					method,
-					body.into(),
+					body1.into(),
 					additional_headers.clone(),
 				)
 				.and_then(|(status_code, body)| {
