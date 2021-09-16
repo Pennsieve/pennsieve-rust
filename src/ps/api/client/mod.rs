@@ -45,6 +45,7 @@ use crate::ps::{Error, ErrorKind, Future, Result, Stream};
 // and should be replaced with reimplementation 
 // or other libraries in the end 
 
+// use hyper::rt::Future as Future1;
 
 fn into_futures_unordered<T>(f: T) 
 	-> stream::futures_unordered::FuturesUnordered<T>
@@ -397,7 +398,8 @@ impl Pennsieve {
 										status_code,
 										String::from_utf8_lossy(&body),
 									)))
-								} else {
+								} 
+								else {
 									let delay = retry_delay(retry_state.try_num);
 									debug!("Rate limit exceeded, retrying in {} ms...", delay);
 
