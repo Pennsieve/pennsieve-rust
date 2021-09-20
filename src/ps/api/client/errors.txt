@@ -1,0 +1,12 @@
+0.3: 
+
+`tokio::prelude::future::MapErr<Delay, fn(tokio::timer::Error) -> _ {<tokio::timer::Error as Into<_>>::into}>` is not a future 
+
+`tokio::prelude::future::Map<tokio::prelude::future::MapErr<Delay, fn(tokio::timer::Error) -> _ {<tokio::timer::Error as Into<_>>::into}>, [closure@src/ps/api/client/mod.rs:410:16: 410:65]>` is not a future
+
+`Delay` is not a future
+
+0.1: 
+
+expected struct `ps::error::Error`, found struct `tokio::timer::Error`
+
