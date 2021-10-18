@@ -374,52 +374,52 @@ impl Pennsieve {
 				try_num: 0,
 			};
 
+			let f1 = async { retry_state.ps
+				.single_request(
+					retry_state.route.clone(),
+					retry_state.params.clone(),
+					retry_state.method.clone(),
+					retry_state.body.clone().into(),
+					retry_state.additional_headers.clone(),
+				)};
+
 			let f = compat_loop::loop_fn(retry_state, move |mut retry_state| {
-				retry_state
-					.ps
-					.single_request(
-						retry_state.route.clone(),
-						retry_state.params.clone(),
-						retry_state.method.clone(),
-						retry_state.body.clone().into(),
-						retry_state.additional_headers.clone(),
-					)
-					.and_then(|(status_code, body)| {
-						// if the status code is considered retryable, wait for a few seconds and
-						// restart the loop to retry again.
-						match RETRYABLE_STATUS_CODES.get(&status_code) {
-							Some(retryable_methods)
-								if retryable_methods.contains(&retry_state.method) =>
-							{
-								retry_state.try_num += 1;
+				f1.and_then(|(status_code, body)| async move {
+					// if the status code is considered retryable, wait for a few seconds and
+					// restart the loop to retry again.
+					match RETRYABLE_STATUS_CODES.get(&status_code) {
+						Some(retryable_methods)
+							if retryable_methods.contains(&retry_state.method) =>
+						{
+							retry_state.try_num += 1;
 
-								if retry_state.try_num > MAX_RETRIES {
-									into_future_trait(future::err(Error::api_error(
-										status_code,
-										String::from_utf8_lossy(&body),
-									)))
-								} 
-								else {
-									let delay = retry_delay(retry_state.try_num);
-									debug!("Rate limit exceeded, retrying in {} ms...", delay);
-
-									let deadline =
-										time::Instant::now() + time::Duration::from_millis(delay);
-									let continue_loop = tokio::timer::Delay::new(deadline)
-										.map_err(Into::into)
-										.map(move |_| compat_loop::Loop::Continue(retry_state));
-									into_future_trait(continue_loop)
-								}
-							}
-							_ if status_code.is_client_error() || status_code.is_server_error() => {
+							if retry_state.try_num > MAX_RETRIES {
 								into_future_trait(future::err(Error::api_error(
 									status_code,
 									String::from_utf8_lossy(&body),
 								)))
+							} 
+							else {
+								let delay = retry_delay(retry_state.try_num);
+								debug!("Rate limit exceeded, retrying in {} ms...", delay);
+
+								let deadline =
+									time::Instant::now() + time::Duration::from_millis(delay);
+								let continue_loop = tokio::timer::Delay::new(deadline)
+									.map_err(Into::into)
+									.map(move |_| compat_loop::Loop::Continue(retry_state));
+								into_future_trait(continue_loop)
 							}
-							_ => into_future_trait(future::ok(compat_loop::Loop::Break(body))),
 						}
-					})
+						_ if status_code.is_client_error() || status_code.is_server_error() => {
+							into_future_trait(future::err(Error::api_error(
+								status_code,
+								String::from_utf8_lossy(&body),
+							)))
+						}
+						_ => into_future_trait(future::ok(compat_loop::Loop::Break(body))),
+					}
+				})
 			});
 			into_future_trait(f)
 		} else {
