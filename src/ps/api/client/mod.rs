@@ -422,7 +422,8 @@ impl Pennsieve {
 				})
 			});
 			into_future_trait(f)
-		} else {
+		}
+		else {
 			let f = self
 				.single_request(
 					route,
