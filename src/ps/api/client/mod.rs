@@ -44,7 +44,6 @@ use crate::ps::{Error, ErrorKind, Future, Result, Stream};
 // using defunct function in `tokio` 
 // and should be replaced with reimplementation 
 // or other libraries in the end 
-use futures::TryFutureExt;
 
 
 // use hyper::rt::Future as Future1;
@@ -437,13 +436,12 @@ impl Pennsieve {
 			};
 			f = f.and_then(|(status_code, body)| async move {
 				if status_code.is_client_error() || status_code.is_server_error() {
-					future::Err::<(StatusCode, String), (StatusCode, String)>(Error::api_error(
-						status_code, 
-						String::from_utf8_lossy(&body),
-					))
+					Err::<(StatusCode, std::borrow::Cow<str>), (StatusCode, std::borrow::Cow<str>)>(
+						(status_code, String::from_utf8_lossy(&body.as_slice()))
+					)
 				}
 				else {
-					Ok::<Vec<u8>, Vec<u8>>(body.to_vec())
+					Ok::<Vec<u8>, Vec<u8>>(body)
 				}
 			});
 			into_future_trait(f)
