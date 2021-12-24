@@ -32,7 +32,11 @@ In our implementation, we define it in a new file so that we can import it whene
 
 ### Methods 
 
-The author of the last version defined some types wrapping errors and built-in `future` types in `future.rs`. 
+The author of the last version defined some types wrapping errors and built-in `future` types in `future.rs`. To make it compatible with `0.3` type systems, we have made some adaptions. 
+
+Most of compiling errors come from two closure functions: `and_then` and `or_else`. It is because some of closures which returned a `future` that produces a `T` rather than returning a `T` itself. 
+
+We have tried the following three ways to resolve these error. That is, changing the input variables to meet the new type requirements, fix body of closures and getting rid of these two functions. 
 
 ### Mistakes 
 
