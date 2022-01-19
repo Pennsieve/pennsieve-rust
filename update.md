@@ -72,7 +72,7 @@ As to future development, we highly recommend following the procedure we have ad
 
 In general, advantages and disadvantages of this method can be summarized as following. 
 
-**Advantages: **
+**Advantages: ** 
 
 *Less changes needed *
 
@@ -90,7 +90,7 @@ Considering the irrating side of the second method, we have also tried getting r
 
 *Radically resolve typing errors and trait problems *
 
-*we can also define new functions in a new file and make the modification neatly *
+*we can also define new functions in a new file and do it neatly *
 
 **Disadvantages: **
 
